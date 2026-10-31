@@ -34,6 +34,7 @@ echo -e "${BOLD}${BLUE}=========================================================
 
 # Informacje o systemie
 OS_VER=$(sw_vers -productVersion)
+OS_MAJOR=$(echo "$OS_VER" | cut -d. -f1)
 OS_BUILD=$(sw_vers -buildVersion)
 ARCH=$(uname -m)
 echo -e "💻 Wykryty system: ${BOLD}macOS ${OS_VER} (${OS_BUILD}) [${ARCH}]${NC}"
@@ -79,14 +80,88 @@ echo -e "\n${BOLD}${BLUE}-------------------------------------------------------
 echo -e "${BOLD}🍏 Krok 2/6: Sprawdzanie aktualizacji systemowych macOS (Apple)...${NC}"
 echo -e "${BOLD}${BLUE}----------------------------------------------------------------------${NC}"
 if command -v softwareupdate >/dev/null 2>&1; then
+    echo -e "Obecnie zainstalowana wersja systemu: ${BOLD}macOS ${OS_VER}${NC} (gałąź ${BOLD}${OS_MAJOR}.x${NC})"
+    echo -e "Czy podczas aktualizacji systemowej chcesz podnieść główną wersję macOS,"
+    echo -e "czy tylko poszukać poprawek dla bieżącej zainstalowanej wersji?"
+    echo -e "  ${BOLD}[1]${NC} Tylko poprawki dla bieżącej wersji (${BOLD}macOS ${OS_MAJOR}.x${NC}, Safari, XProtect) ${GREEN}[Domyślnie]${NC}"
+    echo -e "  ${BOLD}[2]${NC} Podnieś również główną wersję macOS (pełny upgrade do nowszego wydania)"
+    read -p "Wybierz opcję [1/2, domyślnie 1]: " -r MACOS_UPGRADE_CHOICE < /dev/tty || MACOS_UPGRADE_CHOICE="1"
+    echo ""
+
+    ALLOW_MAJOR_UPGRADE=false
+    if [[ "$MACOS_UPGRADE_CHOICE" =~ ^(2|[TtYy])$ ]]; then
+        ALLOW_MAJOR_UPGRADE=true
+        echo -e "${YELLOW}➔ Wybrano: Pełna aktualizacja (wraz z podniesieniem głównej wersji macOS, jeśli dostępna).${NC}"
+    else
+        echo -e "${GREEN}➔ Wybrano: Tylko poprawki i łatki bezpieczeństwa dla bieżącej wersji (macOS ${OS_MAJOR}.x).${NC}"
+    fi
+
     echo "Szukam dostępnych aktualizacji Apple..."
     SW_LIST=$(softwareupdate -l 2>&1 || true)
     if echo "$SW_LIST" | grep -qi "No new software available"; then
         echo -e "${GREEN}✔ System macOS i Safari są w pełni aktualne!${NC}"
     else
-        echo "$SW_LIST"
-        echo -e "\n${YELLOW}⚡ Instaluję zalecane poprawki systemowe (bez restartu wymuszonego)...${NC}"
-        sudo softwareupdate -ia --include-config-data || true
+        if [ "$ALLOW_MAJOR_UPGRADE" = true ]; then
+            echo "$SW_LIST"
+            echo -e "\n${YELLOW}⚡ Instaluję wszystkie dostępne aktualizacje Apple (w tym ewentualną nową wersję macOS)...${NC}"
+            sudo softwareupdate -ia --include-config-data || true
+        else
+            # Filtrujemy aktualizacje: oddzielamy podniesienie głównej wersji macOS od poprawek dla bieżącej gałęzi
+            SW_PARSED=$(SW_TEXT="$SW_LIST" OS_MAJ="$OS_MAJOR" python3 -c "
+import os, re
+
+os_major = int(os.environ.get('OS_MAJ', '0'))
+sw_text = os.environ.get('SW_TEXT', '')
+
+current_label = None
+for line in sw_text.splitlines():
+    m_label = re.match(r'^\s*\*\s*Label:\s*(.+?)\s*$', line)
+    if m_label:
+        current_label = m_label.group(1)
+        continue
+    if current_label and ('Title:' in line or 'Version:' in line):
+        m_title = re.search(r'Title:\s*([^,]+)', line)
+        m_ver = re.search(r'Version:\s*([^,\s]+)', line)
+        title = m_title.group(1).strip() if m_title else ''
+        ver = m_ver.group(1).strip() if m_ver else ''
+
+        is_macos_os = current_label.lower().startswith('macos ') or title.lower().startswith('macos ')
+        is_major_upgrade = False
+        if is_macos_os:
+            ver_match = re.match(r'^(\d+)', ver) or re.search(r'macOS\s+(?:[A-Za-z]+\s+)?(\d+)', current_label + ' ' + title, re.IGNORECASE)
+            if ver_match and int(ver_match.group(1)) != os_major:
+                is_major_upgrade = True
+
+        prefix = 'MAJOR' if is_major_upgrade else 'PATCH'
+        print(f'{prefix}|{current_label}')
+        current_label = None
+")
+            PATCH_LABELS=()
+            MAJOR_LABELS=()
+            while IFS='|' read -r kind lbl; do
+                [ -z "$lbl" ] && continue
+                if [ "$kind" = "MAJOR" ]; then
+                    MAJOR_LABELS+=("$lbl")
+                elif [ "$kind" = "PATCH" ]; then
+                    PATCH_LABELS+=("$lbl")
+                fi
+            done <<< "$SW_PARSED"
+
+            if [ "${#MAJOR_LABELS[@]}" -gt 0 ]; then
+                echo -e "${YELLOW}ℹ️  Pominięto aktualizację do nowej głównej wersji systemu: ${BOLD}${MAJOR_LABELS[*]}${NC}"
+            fi
+
+            if [ "${#PATCH_LABELS[@]}" -gt 0 ]; then
+                echo -e "\n${YELLOW}⚡ Znaleziono poprawki dla bieżącej wersji systemu (macOS ${OS_MAJOR}.x):${NC}"
+                for plbl in "${PATCH_LABELS[@]}"; do
+                    echo -e "  - ${BOLD}${plbl}${NC}"
+                done
+                echo -e "\n${YELLOW}Instaluję wybrane poprawki (bez podnoszenia głównej wersji macOS)...${NC}"
+                sudo softwareupdate -i "${PATCH_LABELS[@]}" --include-config-data || true
+            else
+                echo -e "${GREEN}✔ Brak nowych poprawek dla bieżącej wersji macOS ${OS_VER} — system w gałęzi ${OS_MAJOR}.x jest w pełni aktualny!${NC}"
+            fi
+        fi
     fi
 fi
 
@@ -95,19 +170,19 @@ echo -e "\n${BOLD}${BLUE}-------------------------------------------------------
 echo -e "${BOLD}🛒 Krok 3/6: Aktualizacja aplikacji z Mac App Store...${NC}"
 echo -e "${BOLD}${BLUE}----------------------------------------------------------------------${NC}"
 if command -v mas >/dev/null 2>&1; then
-    if mas account >/dev/null 2>&1; then
-        echo -e "${GREEN}✔ Zalogowano do Mac App Store:${NC} $(mas account)"
-        OUTDATED_MAS=$(mas outdated 2>/dev/null || true)
+    MAS_COUNT=$(mas list 2>/dev/null | wc -l | tr -d ' ')
+    echo -e "🔍 Sprawdzam aktualizacje dla ${BOLD}${MAS_COUNT}${NC} aplikacji z Mac App Store..."
+    if OUTDATED_MAS=$(mas outdated 2>/dev/null); then
         if [ -n "$OUTDATED_MAS" ]; then
             echo -e "${YELLOW}Wykryto aktualizacje z App Store:${NC}\n$OUTDATED_MAS\n"
             echo "Aktualizuję aplikacje ze sklepu..."
-            sudo mas update || true
+            mas upgrade || sudo mas upgrade || true
             echo -e "${GREEN}✔ Zaktualizowano aplikacje z App Store!${NC}"
         else
-            echo -e "${GREEN}✔ Wszystkie aplikacje z Mac App Store są aktualne!${NC}"
+            echo -e "${GREEN}✔ Wszystkie aplikacje z Mac App Store (${MAS_COUNT}) są w pełni aktualne!${NC}"
         fi
     else
-        echo -e "${YELLOW}ℹ️ Nie wykryto aktywnej sesji App Store CLI. Możesz uaktualnić aplikacje bezpośrednio w aplikacji App Store:${NC}"
+        echo -e "${YELLOW}ℹ️ Nie udało się pobrać listy aktualizacji z App Store CLI. Możesz sprawdzić je ręcznie:${NC}"
         echo -e "   Uruchom: ${BOLD}open macappstore://showUpdatesPage${NC}"
     fi
 else

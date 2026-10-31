@@ -8,7 +8,7 @@ Zbiór uniwersalnych, przenośnych skryptów automatyzacji i konfiguracji środo
 ## 🏗️ Architektura i Decyzje Projektowe
 - **`mac_update_all.sh` (Bash + Python 3, zero dependencies):**
   - Subproces odnawiający `sudo -n true` co 50 sekund w tle.
-  - 6-fazowy pipeline aktualizacyjny (Apple `softwareupdate`, `mas CLI`, `brew update/upgrade`, `brew upgrade --cask --greedy`, Auto-Discovery z `Info.plist` i API Homebrew).
+  - 6-fazowy pipeline aktualizacyjny (Apple `softwareupdate` z interaktywnym wyborem: tylko poprawki dla bieżącej gałęzi macOS vs pełny upgrade do nowej głównej wersji systemu, `mas CLI`, `brew update/upgrade`, `brew upgrade --cask --greedy`, Auto-Discovery z `Info.plist` i API Homebrew).
   - Bezpieczne sprzątanie instalatorów (`brew cleanup -s`).
 - **`zsh_tools.sh` (Bash, idempotentny instalator CLI):**
   - Wykrywa platformę Apple Silicon (`/opt/homebrew`) oraz Intel (`/usr/local`).
@@ -29,6 +29,10 @@ Zbiór uniwersalnych, przenośnych skryptów automatyzacji i konfiguracji środo
 | `GEMINI.md` | Kontekst projektu, architektura i stan dla Antigravity / agentów AI |
 
 ## 🔄 Ostatnie Zmiany i Stan Projektu
+- **Wybór trybu aktualizacji systemowej macOS oraz poprawka `mas CLI` w `mac_update_all.sh` (31.10.2026):**
+  - Dodano interaktywne pytanie w Kroku 2/6 (`softwareupdate`), pozwalające wybrać między instalacją wyłącznie poprawek dla bieżącej zainstalowanej wersji macOS (domyślnie, np. gałąź `26.x`, Safari, XProtect) a podniesieniem głównej wersji systemu (np. do `macOS 27+`).
+  - Dodano parser etykiet `softwareupdate -l` w Pythonie 3 odfiltrowujący duże wydania macOS, gdy użytkownik wybierze tylko łatki dla obecnej wersji, i instalujący wybrane poprawki przez `softwareupdate -i <labels>`.
+  - Usunięto wycofane w nowym `mas CLI` polecenie `mas account` w Kroku 3/6 na rzecz bezpośredniego sprawdzania `mas list` i `mas outdated` oraz aktualizacji przez `mas upgrade`.
 - **Wzbogacenie repozytorium o moduł terminala Zsh (28.10.2026):**
   - Dodano `zsh_tools.sh` (instalator 8 narzędzi CLI: `eza`, `fzf`, `zoxide`, `bat`, `glow`, `starship`, `zsh-syntax-highlighting`, `zsh-autosuggestions`).
   - Dodano `jak_uzywac_nowego_zsh.md` (szczegółowy przewodnik, tabele skrótów, instrukcja konfiguracji).

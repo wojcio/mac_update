@@ -14,7 +14,7 @@ Kompleksowa aktualizacja całego ekosystemu oprogramowania na Macu: od łatek be
 
 ### ⚡ Główne Możliwości
 * **Utrzymywanie uprawnień `sudo` w tle:** pyta o hasło tylko raz na początku i podtrzymuje sesję do końca.
-* **Aktualizacje systemowe Apple:** instaluje poprawki systemowe macOS, Safari i reguły XProtect (`softwareupdate`).
+* **Aktualizacje systemowe Apple (z wyborem trybu):** pyta użytkownika, czy chce zainstalować wyłącznie poprawki i łatki bezpieczeństwa dla bieżącej wersji macOS (np. gałęzi `26.x`, Safari, XProtect), czy również podnieść główną wersję systemu do kolejnego wydania (`softwareupdate`).
 * **Mac App Store:** automatycznie aktualizuje aplikacje ze sklepu przez narzędzie `mas CLI`.
 * **Homebrew:** aktualizuje formuły CLI (`brew update && brew upgrade`) oraz zarządzane programy GUI (`brew upgrade --cask --greedy`).
 * **🧠 Inteligentny Auto-Discovery (aplikacje spoza Caska / zainstalowane ręcznie):**
