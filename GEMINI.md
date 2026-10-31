@@ -29,10 +29,11 @@ Zbiór uniwersalnych, przenośnych skryptów automatyzacji i konfiguracji środo
 | `GEMINI.md` | Kontekst projektu, architektura i stan dla Antigravity / agentów AI |
 
 ## 🔄 Ostatnie Zmiany i Stan Projektu
-- **Wybór trybu aktualizacji systemowej macOS oraz poprawka `mas CLI` w `mac_update_all.sh` (31.10.2026):**
+- **Wybór trybu aktualizacji systemowej macOS, poprawka `mas CLI` i uprawnień Auto-Discovery w `mac_update_all.sh` (31.10.2026):**
   - Dodano interaktywne pytanie w Kroku 2/6 (`softwareupdate`), pozwalające wybrać między instalacją wyłącznie poprawek dla bieżącej zainstalowanej wersji macOS (domyślnie, np. gałąź `26.x`, Safari, XProtect) a podniesieniem głównej wersji systemu (np. do `macOS 27+`).
   - Dodano parser etykiet `softwareupdate -l` w Pythonie 3 odfiltrowujący duże wydania macOS, gdy użytkownik wybierze tylko łatki dla obecnej wersji, i instalujący wybrane poprawki przez `softwareupdate -i <labels>`.
   - Usunięto wycofane w nowym `mas CLI` polecenie `mas account` w Kroku 3/6 na rzecz bezpośredniego sprawdzania `mas list` i `mas outdated` oraz aktualizacji przez `mas upgrade`.
+  - W Kroku 6/6 (Auto-Discovery) naprawiono błąd `Permission denied @ apply2files` przy aktualizowaniu aplikacji należących do `root:wheel` (np. `Perplexity.app` wycofana z Mac App Store i zastępowana nową wersją z Homebrew Cask) poprzez automatyczne nadanie uprawnień bieżącemu użytkownikowi (`sudo chown -R`), pomijanie aktywnych aplikacji z App Store (`_MASReceipt` w tej samej gałęzi wersji) oraz pomijanie Casków już zainstalowanych w tej samej wersji w `Caskroom`.
 - **Wzbogacenie repozytorium o moduł terminala Zsh (28.10.2026):**
   - Dodano `zsh_tools.sh` (instalator 8 narzędzi CLI: `eza`, `fzf`, `zoxide`, `bat`, `glow`, `starship`, `zsh-syntax-highlighting`, `zsh-autosuggestions`).
   - Dodano `jak_uzywac_nowego_zsh.md` (szczegółowy przewodnik, tabele skrótów, instrukcja konfiguracji).

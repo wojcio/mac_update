@@ -261,16 +261,28 @@ for c in casks:
 
 # Skanujemy aplikacje na tej konkretnej maszynie
 scan_dirs = ['/Applications', os.path.expanduser('~/Applications')]
+caskrooms = ['/opt/homebrew/Caskroom', '/usr/local/Caskroom']
 to_upgrade = []
 
 for d in scan_dirs:
     if not os.path.exists(d): continue
-    for entry in os.listdir(d):
+    for entry in sorted(os.listdir(d)):
         if entry.endswith('.app'):
             low_name = entry.lower()
             if low_name in app_map:
                 token, remote_ver = app_map[low_name]
-                info_p = os.path.join(d, entry, 'Contents', 'Info.plist')
+                # Pomiń, jeśli ta dokładnie wersja Caska jest już zainstalowana w Caskroom
+                # (np. gdy autor aplikacji zahardkodował starą wersję w Info.plist, jak w Hermes.app)
+                already_in_caskroom = any(
+                    os.path.exists(os.path.join(cr, token, str(remote_ver)))
+                    for cr in caskrooms
+                )
+                if already_in_caskroom:
+                    continue
+
+                app_full_path = os.path.join(d, entry)
+                info_p = os.path.join(app_full_path, 'Contents', 'Info.plist')
+                mas_receipt = os.path.join(app_full_path, 'Contents', '_MASReceipt')
                 if os.path.exists(info_p):
                     try:
                         with open(info_p, 'rb') as fp:
@@ -279,7 +291,12 @@ for d in scan_dirs:
                             pv_local = parse_ver(lver)
                             pv_remote = parse_ver(remote_ver)
                             if pv_remote and pv_local and pv_remote > pv_local:
-                                to_upgrade.append((entry, token, lver, remote_ver))
+                                # Jeśli aplikacja pochodzi z Mac App Store (_MASReceipt) i ma tę samą główną gałąź wersji,
+                                # jej aktualizacjami zarządza App Store (mas), więc nie nadpisujemy jej wersją z Caska.
+                                # Wyjątkiem są aplikacje porzucone w App Store (gdzie główna wersja w Casku jest znacznie wyższa, np. Perplexity 2.x -> 26.x).
+                                if os.path.exists(mas_receipt) and pv_local[0] == pv_remote[0]:
+                                    continue
+                                to_upgrade.append((entry, token, lver, remote_ver, app_full_path))
                     except Exception:
                         pass
 
@@ -287,26 +304,26 @@ if not to_upgrade:
     print('✔ Wszystkie aplikacje w /Applications są w najnowszych wersjach!')
 else:
     print(f'Wykryto {len(to_upgrade)} aplikacji wymagających aktualizacji:')
-    tokens_to_run = []
-    for app_name, token, lver, rver in to_upgrade:
-        print(f'  - {app_name:<25}: {lver} ➔ {rver} (cask: {token})')
-        tokens_to_run.append(token)
-    
-    # Zapisz listę tokenów do pliku tymczasowego dla basha
     with open('/tmp/apps_to_brew_upgrade.txt', 'w') as out_f:
-        out_f.write(' '.join(tokens_to_run))
+        for app_name, token, lver, rver, app_full_path in to_upgrade:
+            print(f'  - {app_name:<25}: {lver} ➔ {rver} (cask: {token})')
+            out_f.write(f'{token}|{app_full_path}\n')
 "
 
     if [ -f "/tmp/apps_to_brew_upgrade.txt" ]; then
-        TOKENS=$(cat /tmp/apps_to_brew_upgrade.txt)
+        echo -e "\n${YELLOW}Instaluję najnowsze wersje wykrytych aplikacji przez Homebrew...${NC}"
+        while IFS='|' read -r tok app_path; do
+            [ -z "$tok" ] && continue
+            echo -e "🚀 Aktualizuję: ${BOLD}${tok}${NC}..."
+            # Jeśli istniejący pakiet .app należy do root:wheel (np. stara instalacja PKG lub porzucona aplikacja z App Store),
+            # nadajemy uprawnienia bieżącemu użytkownikowi, aby uniknąć błędu 'Permission denied @ apply2files' w Homebrew
+            if [ -n "$app_path" ] && [ -d "$app_path" ]; then
+                sudo chown -R "$(id -un):staff" "$app_path" 2>/dev/null || true
+                sudo chmod -R u+w "$app_path" 2>/dev/null || true
+            fi
+            brew install --cask --force "$tok" || echo -e "${RED}Błąd aktualizacji ${tok}, pomijam.${NC}"
+        done < /tmp/apps_to_brew_upgrade.txt
         rm -f /tmp/apps_to_brew_upgrade.txt
-        if [ -n "$TOKENS" ]; then
-            echo -e "\n${YELLOW}Instaluję najnowsze wersje wykrytych aplikacji przez Homebrew...${NC}"
-            for tok in $TOKENS; do
-                echo -e "🚀 Aktualizuję: ${BOLD}${tok}${NC}..."
-                brew install --cask --force "$tok" || echo -e "${RED}Błąd aktualizacji ${tok}, pomijam.${NC}"
-            done
-        fi
     fi
 
     # 8. Czyszczenie pamięci podręcznej i starych wersji
