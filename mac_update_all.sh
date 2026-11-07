@@ -18,6 +18,11 @@
 #  8. Czyści pamięć podręczną i stare pakiety (brew cleanup).
 # ==============================================================================
 
+# Opakowanie całego skryptu w blok { ... ; exit 0; } wymusza wczytanie go w całości
+# do pamięci RAM przy starcie (chroni przed błędem przesunięcia offsetu pliku / EOF,
+# gdyby skrypt został zmodyfikowany na dysku w trakcie działania).
+{
+
 set -e
 
 # Kolory do terminala
@@ -411,3 +416,6 @@ fi
 echo -e "\n${BOLD}${GREEN}======================================================================${NC}"
 echo -e "${BOLD}${GREEN} 🎉 SUKCES! System i wszystkie aplikacje na tym Macu są zaktualizowane! ${NC}"
 echo -e "${BOLD}${GREEN}======================================================================${NC}\n"
+
+exit 0
+}
