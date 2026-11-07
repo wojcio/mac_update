@@ -176,7 +176,7 @@ if command -v mas >/dev/null 2>&1; then
         if [ -n "$OUTDATED_MAS" ]; then
             echo -e "${YELLOW}Wykryto aktualizacje z App Store:${NC}\n$OUTDATED_MAS\n"
             echo "Aktualizuję aplikacje ze sklepu..."
-            mas upgrade || sudo mas upgrade || true
+            sudo mas upgrade || mas upgrade || true
             echo -e "${GREEN}✔ Zaktualizowano aplikacje z App Store!${NC}"
         else
             echo -e "${GREEN}✔ Wszystkie aplikacje z Mac App Store (${MAS_COUNT}) są w pełni aktualne!${NC}"
@@ -202,11 +202,91 @@ if command -v brew >/dev/null 2>&1; then
     echo -e "${BOLD}📦 Krok 5/6: Aktualizacja aplikacji Homebrew Cask (zarządzanych)...${NC}"
     echo -e "${BOLD}${BLUE}----------------------------------------------------------------------${NC}"
     
+    # Funkcja pomocnicza: przygotowuje pakiet .app należący do root (np. porzuconą aplikację z App Store)
+    # do zastąpienia przez Homebrew Cask i czyści uszkodzone kopie zapasowe w Caskroom
+    prepare_app_for_cask_replace() {
+        local app_path="$1"
+        local tok="$2"
+
+        # 1. Usuń uszkodzone (niebędące symlinkami) katalogi .app wewnątrz Caskroom dla danego tokena,
+        # które blokują Homebrew błędem "It seems there is already an App at '/opt/homebrew/Caskroom/...'"
+        if [ -n "$tok" ]; then
+            for cr in /opt/homebrew/Caskroom /usr/local/Caskroom; do
+                if [ -d "$cr/$tok" ]; then
+                    for candidate_app in "$cr/$tok"/*/*.app; do
+                        if [ -d "$candidate_app" ] && [ ! -L "$candidate_app" ]; then
+                            rm -rf "$candidate_app" 2>/dev/null || sudo rm -rf "$candidate_app" 2>/dev/null || true
+                        fi
+                    done
+                fi
+            done
+        fi
+
+        [ -z "$app_path" ] || [ ! -d "$app_path" ] && return 0
+
+        # 2. Sprawdź, czy pakiet .app w /Applications należy do root (UID 0)
+        local app_uid
+        app_uid=$(stat -f "%u" "$app_path" 2>/dev/null || echo "")
+        if [ "$app_uid" = "0" ]; then
+            # Jeśli w /Applications nadal leży wersja z App Store (_MASReceipt), usuń ewentualny niepełny wpis z Caskroom,
+            # aby 'brew install --cask --force' wykonał czystą instalację zamiast nieudanego upgrade'u
+            if [ -n "$tok" ] && [ -d "$app_path/Contents/_MASReceipt" ]; then
+                rm -rf "/opt/homebrew/Caskroom/$tok" "/usr/local/Caskroom/$tok" 2>/dev/null || true
+            fi
+
+            # Jeśli to porzucona aplikacja z Mac App Store (_MASReceipt), użyj oficjalnego 'mas uninstall --bundle'
+            if [ -d "$app_path/Contents/_MASReceipt" ] && command -v mas >/dev/null 2>&1; then
+                local bundle_id
+                bundle_id=$(defaults read "$app_path/Contents/Info.plist" CFBundleIdentifier 2>/dev/null || echo "")
+                if [ -n "$bundle_id" ]; then
+                    echo -e "   🔓 Odinstalowuję starą wersję Mac App Store (${BOLD}${bundle_id}${NC}) przed migracją do Cask..."
+                    sudo mas uninstall --bundle "$bundle_id" 2>/dev/null || true
+                fi
+            fi
+
+            # Jeśli pakiet nadal istnieje, spróbuj zmienić właściciela lub usunąć stary pakiet root:wheel
+            if [ -d "$app_path" ]; then
+                sudo chown -R "$(id -un):staff" "$app_path" 2>/dev/null || true
+                sudo chmod -R u+w "$app_path" 2>/dev/null || true
+            fi
+            if [ -d "$app_path" ] && [ "$(stat -f "%u" "$app_path" 2>/dev/null)" = "0" ]; then
+                sudo rm -rf "$app_path" 2>/dev/null || true
+            fi
+
+            # Jeśli macOS TCC (App Management) nadal zablokował modyfikację/usunięcie pakietu .app:
+            if [ -d "$app_path" ] && [ "$(stat -f "%u" "$app_path" 2>/dev/null)" = "0" ]; then
+                echo -e "${YELLOW}⚠️  System macOS (TCC) zablokował nadpisanie ${BOLD}${app_path}${NC}.${NC}"
+                echo -e "${YELLOW}   👉 Nadaj uprawnienia swojemu terminalowi i aplikacjom pochodnym (Terminal, iTerm2, Ghostty, Warp, VS Code, Cursor, Antigravity) w:${NC}"
+                echo -e "${BOLD}      Ustawienia systemowe → Prywatność i ochrona → Zarządzanie aplikacjami (App Management)${NC}"
+            fi
+        fi
+    }
+
     # Bezpieczne obsłużenie Stats.app przed upgrade, jeśli występuje
     if [ -f "/Library/LaunchDaemons/eu.exelban.Stats.SMC.Helper.plist" ]; then
         sudo launchctl bootout system /Library/LaunchDaemons/eu.exelban.Stats.SMC.Helper.plist 2>/dev/null || true
         sudo rm -f /Library/PrivilegedHelperTools/eu.exelban.Stats.SMC.Helper /Library/LaunchDaemons/eu.exelban.Stats.SMC.Helper.plist 2>/dev/null || true
     fi
+
+    # Przed brew upgrade --cask wyczyść osierocone katalogi .app w Caskroom
+    for cr in /opt/homebrew/Caskroom /usr/local/Caskroom; do
+        [ -d "$cr" ] || continue
+        for cask_dir in "$cr"/*; do
+            [ -d "$cask_dir" ] || continue
+            for ver_app in "$cask_dir"/*/*.app; do
+                [ -e "$ver_app" ] || [ -L "$ver_app" ] || continue
+                app_base=$(basename "$ver_app")
+                if [ -d "$ver_app" ] && [ ! -L "$ver_app" ]; then
+                    rm -rf "$ver_app" 2>/dev/null || sudo rm -rf "$ver_app" 2>/dev/null || true
+                fi
+                # Jeśli w /Applications nadal leży stara wersja z App Store (_MASReceipt) należąca do root,
+                # usuń niezsynchronizowany wpis z Caskroom, by Krok 6/6 (Auto-Discovery) czysto przeprowadził migrację
+                if [ -d "/Applications/$app_base/Contents/_MASReceipt" ] && [ "$(stat -f "%u" "/Applications/$app_base" 2>/dev/null)" = "0" ]; then
+                    rm -rf "$cask_dir" 2>/dev/null || true
+                fi
+            done
+        done
+    done
 
     brew upgrade --cask --greedy || true
 
@@ -312,17 +392,12 @@ else:
 
     if [ -f "/tmp/apps_to_brew_upgrade.txt" ]; then
         echo -e "\n${YELLOW}Instaluję najnowsze wersje wykrytych aplikacji przez Homebrew...${NC}"
-        while IFS='|' read -r tok app_path; do
+        while IFS='|' read -r tok app_path <&3; do
             [ -z "$tok" ] && continue
             echo -e "🚀 Aktualizuję: ${BOLD}${tok}${NC}..."
-            # Jeśli istniejący pakiet .app należy do root:wheel (np. stara instalacja PKG lub porzucona aplikacja z App Store),
-            # nadajemy uprawnienia bieżącemu użytkownikowi, aby uniknąć błędu 'Permission denied @ apply2files' w Homebrew
-            if [ -n "$app_path" ] && [ -d "$app_path" ]; then
-                sudo chown -R "$(id -un):staff" "$app_path" 2>/dev/null || true
-                sudo chmod -R u+w "$app_path" 2>/dev/null || true
-            fi
+            prepare_app_for_cask_replace "$app_path" "$tok"
             brew install --cask --force "$tok" || echo -e "${RED}Błąd aktualizacji ${tok}, pomijam.${NC}"
-        done < /tmp/apps_to_brew_upgrade.txt
+        done 3< /tmp/apps_to_brew_upgrade.txt
         rm -f /tmp/apps_to_brew_upgrade.txt
     fi
 

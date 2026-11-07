@@ -15,12 +15,27 @@ Kompleksowa aktualizacja całego ekosystemu oprogramowania na Macu: od łatek be
 ### ⚡ Główne Możliwości
 * **Utrzymywanie uprawnień `sudo` w tle:** pyta o hasło tylko raz na początku i podtrzymuje sesję do końca.
 * **Aktualizacje systemowe Apple (z wyborem trybu):** pyta użytkownika, czy chce zainstalować wyłącznie poprawki i łatki bezpieczeństwa dla bieżącej wersji macOS (np. gałęzi `26.x`, Safari, XProtect), czy również podnieść główną wersję systemu do kolejnego wydania (`softwareupdate`).
-* **Mac App Store:** automatycznie aktualizuje aplikacje ze sklepu przez narzędzie `mas CLI`.
-* **Homebrew:** aktualizuje formuły CLI (`brew update && brew upgrade`) oraz zarządzane programy GUI (`brew upgrade --cask --greedy`).
-* **🧠 Inteligentny Auto-Discovery (aplikacje spoza Caska / zainstalowane ręcznie):**
+* **Mac App Store:** automatycznie aktualizuje aplikacje ze sklepu przez narzędzie `mas CLI` (w pełni kompatybilne z `mas 7.0+` wymagającym `sudo`).
+* **Homebrew:** aktualizuje formuły CLI (`brew update && brew upgrade`) oraz zarządzane programy GUI (`brew upgrade --cask --greedy`), automatycznie naprawiając przerwane instalacje i osierocone katalogi w `Caskroom`.
+* **🧠 Inteligentny Auto-Discovery i migracja porzuconych aplikacji z App Store:**
   * Skanuje `/Applications` i `~/Applications`, odczytuje wersje z `Info.plist` i porównuje z API Homebrew.
+  * Automatycznie wykrywa aplikacje wycofane z Mac App Store (posiadające stary `_MASReceipt` oraz właściciela `root:wheel`, np. `Perplexity.app`), odinstalowuje przestarzałą wersję systemową przez `sudo mas uninstall` i zastępuje ją najnowszym wydaniem z Homebrew Cask.
   * Aktualizuje **wyłącznie** programy już obecne na dysku — nie narzuca żadnego niechcianego oprogramowania.
 * **Sprzątanie:** usuwa przestarzałe instalatory i zwalnia miejsce na dysku (`brew cleanup -s`).
+
+### 🔐 Wymagane uprawnienia macOS (Terminal i pochodne aplikacje)
+
+> [!IMPORTANT]
+> Od systemu macOS Ventura (13+) mechanizm bezpieczeństwa **TCC (Transparency, Consent, and Control)** domyślnie blokuje modyfikację oraz usuwanie pakietów w `/Applications` (szczególnie aplikacji zainstalowanych wcześniej z Mac App Store lub należących do `root:wheel`), nawet podczas używania `sudo`.
+>
+> Aby skrypt mógł bezbłędnie aktualizować wszystkie aplikacje GUI (Cask oraz migracje z App Store), nadaj uprawnienia swojemu terminalowi oraz edytorom/agentom, z których uruchamiasz skrypt:
+>
+> 1. Otwórz **Ustawienia systemowe** (`System Settings`) ➔ **Prywatność i ochrona** (`Privacy & Security`).
+> 2. Wejdź w sekcję **Zarządzanie aplikacjami** (`App Management`) — *opcjonalnie również w **Pełny dostęp do dysku** (`Full Disk Access`)*.
+> 3. Włącz przełącznik (lub dodaj przyciskiem `+`) dla używanych programów terminalowych i środowisk pochodnych:
+>    - **Terminale:** `Terminal.app`, `iTerm2`, `Ghostty`, `Warp`, `Alacritty`, `Kitty`
+>    - **IDE / Agenci AI (jeśli uruchamiasz skrypt z ich wbudowanego terminala):** `Antigravity`, `Visual Studio Code`, `Cursor`, `Zed`, `JetBrains IDEs`
+> 4. Po włączeniu uprawnienia zrestartuj dany terminal/aplikację.
 
 ### 🚀 Szybki Start:
 ```bash
